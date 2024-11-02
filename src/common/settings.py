@@ -80,7 +80,7 @@ def reset():
     global move_tolerance, adjust_tolerance, record_layout, buff_cooldown
     move_tolerance = 0.1
     adjust_tolerance = 0.01
-    record_layout = False
+    record_layout = True
     buff_cooldown = 180
 
 
@@ -91,7 +91,7 @@ move_tolerance = 0.1
 adjust_tolerance = 0.01
 
 # Whether the bot should save new player positions to the current layout
-record_layout = False
+record_layout = True
 
 # The amount of time (in seconds) to wait between each call to the 'buff' command
 buff_cooldown = 180
