@@ -7,7 +7,6 @@ from src.modules.notifier import Notifier
 from src.modules.listener import Listener
 from src.modules.gui import GUI
 
-
 bot = Bot()
 capture = Capture()
 notifier = Notifier()

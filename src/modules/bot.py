@@ -16,6 +16,8 @@ from src.command_book.command_book import CommandBook
 from src.routine.components import Point
 from src.common.vkeys import press, click
 from src.common.interfaces import Configurable
+from src.modules.notifier import distance_to_rune, calculate_rune_minimap_position
+import numpy as np
 
 
 # The rune's buff icon
@@ -78,14 +80,35 @@ class Bot(Configurable):
         self.ready = True
         config.listener.enabled = True
         last_fed = time.time()
+        last_rune_scan = time.time()  # 新增：上次掃描時間
+        SCAN_INTERVAL = 10  # 新增：掃描間隔(秒)
+
         while True:
             if config.enabled and len(config.routine) > 0:
+                now = time.time()
+
+                # 定期掃描符文
+                if now - last_rune_scan > SCAN_INTERVAL:
+                    frame = config.capture.frame
+                    minimap = config.capture.minimap['minimap']
+                    if frame is not None:
+                        found, rune_minimap_pos = calculate_rune_minimap_position(frame, minimap)
+                        if found:
+                            print("\n[!] 開始處理地圖輪...")
+                            config.bot.rune_active = True
+                            config.bot.rune_pos = rune_minimap_pos
+                            if config.routine.sequence:
+                                distances = list(map(distance_to_rune, config.routine.sequence))
+                                index = np.argmin(distances)
+                                config.bot.rune_closest_pos = config.routine[index].location
+                                print(f"[~] 最近的路徑點: {config.bot.rune_closest_pos}")
+                last_rune_scan = now
+
                 # Buff and feed pets
                 self.command_book.buff.main()
                 pet_settings = config.gui.settings.pets
                 auto_feed = pet_settings.auto_feed.get()
                 num_pets = pet_settings.num_pets.get()
-                now = time.time()
                 if auto_feed and now - last_fed > 1200 / num_pets:
                     press(self.config['Feed pet'], 1)
                     last_fed = now
