@@ -18,17 +18,21 @@ from src.common.vkeys import press, click
 from src.common.interfaces import Configurable
 from src.modules.notifier import distance_to_rune, calculate_rune_minimap_position
 import numpy as np
+import requests
+from datetime import datetime, timedelta
+# from ask_llm import ask_llm_with_image
 
 
 # The rune's buff icon
 RUNE_BUFF_TEMPLATE = cv2.imread('assets/rune_buff_template.jpg', 0)
-
+LINE_NOTIFY_TOKEN = "LYEaUlvVJiqeB5MhkDub6VWcJE4bTIENCb9bhWZb9Pz"  # 請替換為你的 LINE Notify Token
+NOTIFY_COOLDOWN = 30  # 推播冷卻時間（分鐘）
 
 class Bot(Configurable):
     """A class that interprets and executes user-defined routines."""
 
     DEFAULT_CONFIG = {
-        'Interact': 'y',
+        'Interact': 'up',
         'Feed pet': '9'
     }
 
@@ -56,6 +60,9 @@ class Bot(Configurable):
         self.ready = False
         self.thread = threading.Thread(target=self._main)
         self.thread.daemon = True
+        # 添加 LINE 推播相關的屬性
+        self.last_line_notify_time = datetime.min
+        self.line_notify_token = LINE_NOTIFY_TOKEN
 
     def start(self):
         """
@@ -94,6 +101,9 @@ class Bot(Configurable):
                     if frame is not None:
                         found, rune_minimap_pos = calculate_rune_minimap_position(frame, minimap)
                         if found:
+                            # 添加 LINE 推播
+                            notify_message = f"\n發現地圖輪！\n時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                            self.send_line_notify(notify_message)
                             print("\n[!] 開始處理地圖輪...")
                             config.bot.rune_active = True
                             config.bot.rune_pos = rune_minimap_pos
@@ -142,12 +152,13 @@ class Bot(Configurable):
         adjust(*self.rune_pos).execute()
         time.sleep(0.2)
         press(self.config['Interact'], 1, down_time=0.2)        # Inherited from Configurable
-
+        press('up', 1, down_time=0.2)
         print('\nSolving rune:')
         inferences = []
         for _ in range(15):
             frame = config.capture.frame
             solution = detection.merge_detection(model, frame)
+            # solution = ask_llm_with_image(frame)
             if solution:
                 print(', '.join(solution))
                 if solution in inferences:
@@ -172,6 +183,43 @@ class Bot(Configurable):
                     break
                 elif len(solution) == 4:
                     inferences.append(solution)
+
+        # 使用 AI 識別方向
+        frame = config.capture.frame
+        # directions = get_rune_directions(frame)
+        # if directions:
+        #     print('Solution found, entering result')
+        #     for direction in directions:
+        #         press(direction, 1, down_time=0.1)
+
+    def send_line_notify(self, message):
+        """
+        發送 LINE Notify 訊息
+        :param message: 要發送的訊息內容
+        :return: 是否發送成功
+        """
+
+        # 檢查冷卻時間
+        now = datetime.now()
+        if now - self.last_line_notify_time < timedelta(minutes=NOTIFY_COOLDOWN):
+            # print(f"[!] LINE 推播仍在冷卻中，剩餘 {NOTIFY_COOLDOWN - (now - self.last_line_notify_time).seconds // 60} 分鐘")
+            return False
+
+        headers = {"Authorization": f"Bearer {self.line_notify_token}"}
+        payload = {"message": message}
+        response = requests.post(
+            "https://notify-api.line.me/api/notify",
+            headers=headers,
+            data=payload
+        )
+
+        if response.status_code == 200:
+            print(f"[~] LINE 推播成功: {message}")
+            self.last_line_notify_time = now
+            return True
+        else:
+            print(f"[!] LINE 推播失敗: {response.status_code}")
+            return False
 
     def load_commands(self, file):
         try:

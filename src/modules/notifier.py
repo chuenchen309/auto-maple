@@ -10,7 +10,6 @@ import numpy as np
 import keyboard as kb
 from src.routine.components import Point
 
-
 # A rune's symbol on the minimap
 RUNE_RANGES = (
     ((141, 148, 245), (146, 158, 255)),
@@ -31,21 +30,19 @@ ELITE_TEMPLATE = cv2.imread('assets/elite_template.jpg', 0)
 # 新版符文檢測用的模板
 rune_main_filtered = cv2.imread('assets/rune_main_template.png')
 RUNE_MAIN_TEMPLATE = cv2.cvtColor(rune_main_filtered, cv2.COLOR_BGR2GRAY)
-# RUNE_MAIN_TEMPLATE = cv2.cvtColor(rune_main_filtered, cv2.COLOR_BGR2GRAY)
 
-# 載入所有需要的���圖片
+# 載入所有需要的圖片
 # RUNE_MAIN_TEMPLATE = cv2.imread('assets/rune_main_template.png')
 # CHARACTER_MAIN_TEMPLATE = cv2.imread('assets/player_main_template.png')
-RUNE_MAIN_TEMPLATE = cv2.cvtColor(cv2.imread('assets/rune_main_template.png'), cv2.COLOR_BGR2GRAY)
 CHARACTER_MAIN_TEMPLATE = cv2.cvtColor(cv2.imread('assets/player_main_template.png'), cv2.COLOR_BGR2GRAY)
+MINIMAP_SCALE = 12.5  # 固定縮放比例為 12~13 倍
 
 def get_alert_path(name):
     return os.path.join(Notifier.ALERTS_DIR, f'{name}.mp3')
 
-
 class Notifier:
     ALERTS_DIR = os.path.join('assets', 'alerts')
-    minimap_scale = 13.0  # 固定縮放比例為 13 倍
+
 
     def __init__(self):
         """Initializes this Notifier object's main thread."""
@@ -166,42 +163,10 @@ def detect_rune_in_main_screen(frame, minimap):
         matches = utils.multi_match(frame, RUNE_MAIN_TEMPLATE, threshold=0.6)
 
         if len(matches) > 0:
-            # 取得���置並轉換為整數座標
+            # 取得並轉換為整數座標
             rune_pos = matches[0]
             center = (int(rune_pos[0]), int(rune_pos[1]))  # 確保座標是整數
-            print(f"\n[!] 發現地圖輪! 位置: {center}")
-
-            # 在圖片上標記地圖輪位置
-            cv2.circle(debug_image, center, 20, (0, 255, 0), 2)  # 綠色圓圈
-            cv2.putText(debug_image, f"Rune {center}",
-                       (center[0]-10, center[1]-10),
-                       cv2.FONT_HERSHEY_SIMPLEX,
-                       0.5, (0, 255, 0), 2)
-
-            # 保存主畫面檢測結果
-            cv2.imwrite('debug_rune_detection.jpg', debug_image)
-
-            # 轉換為相對位置並視覺化
-            # self.frame = self.screenshot()
-            # if self.frame is None:
-            #     continue
-
-            # # Crop the frame to only show the minimap
-            # minimap = self.frame[mm_tl[1]:mm_br[1], mm_tl[0]:mm_br[0]]
-            rune_pos = utils.convert_to_relative(center, minimap)
-
-            # 在小地圖上標記位置
-            minimap_debug = minimap.copy()
-            minimap_pos = (int(rune_pos[0] * minimap.shape[1]),
-                         int(rune_pos[1] * minimap.shape[0]))
-            cv2.circle(minimap_debug, minimap_pos, 5, (0, 255, 0), 2)
-            cv2.putText(minimap_debug, f"Rune {rune_pos}",
-                       (minimap_pos[0]-10, minimap_pos[1]-10),
-                       cv2.FONT_HERSHEY_SIMPLEX,
-                       0.3, (0, 255, 0), 1)
-
-            # 保存小地圖檢測結果
-            cv2.imwrite('debug_rune_minimap.jpg', minimap_debug)
+            # print(f"\n[!] 發現地圖輪! 位置: {center}")
 
             return True, rune_pos
 
@@ -214,25 +179,13 @@ def detect_rune_in_main_screen(frame, minimap):
 def detect_character_in_main_screen(frame):
     """檢測主畫面中角色的位置"""
     try:
-        # 複製原始圖片，用於繪製結果
-        # debug_image = frame.copy()
-
         # 使用模板匹配找到角色位置
         matches = utils.multi_match(frame, CHARACTER_MAIN_TEMPLATE, threshold=0.6)
 
         if len(matches) > 0:
             pos = matches[0]
-            print(f"\n[!] 發現角色! 位置: {pos}")
+            # print(f"\n[!] 發現角色! 位置: {pos}")
 
-            # 在圖片上標記角色位置
-            # cv2.circle(debug_image, pos, 20, (0, 0, 255), 2)  # 紅色圓圈
-            # cv2.putText(debug_image, f"Character {pos}",
-            #            (pos[0]-10, pos[1]-10),
-            #            cv2.FONT_HERSHEY_SIMPLEX,
-            #            0.5, (0, 0, 255), 2)
-
-            # # 保存結果圖片
-            # cv2.imwrite('debug_character_detection.jpg', debug_image)
             return True, pos
 
         return False, None
@@ -242,39 +195,50 @@ def detect_character_in_main_screen(frame):
         return False, None
 
 def calculate_rune_minimap_position(frame, minimap):
-    """計算地圖輪在小地圖上的位置"""
+    """
+    計算地圖輪在小地圖上的位置
+    :param frame: 主畫面截圖
+    :param minimap: 小地圖截圖
+    :return: (成功與否, 地圖輪在小地圖上的位置)
+    """
     try:
         # 1. 檢測主畫面中的符文和角色位置
-        rune_found, rune_pos = detect_rune_in_main_screen(frame, minimap)
+        rune_found, rune_main_pos = detect_rune_in_main_screen(frame, minimap)
         character_found, char_main_pos = detect_character_in_main_screen(frame)
-        if not rune_found:
+
+        if not (rune_found and character_found):
             return False, None
 
+        # 2. 計算主畫面中的距離差（像素）
+        pixel_dx = rune_main_pos[0] - char_main_pos[0]
+        pixel_dy = rune_main_pos[1] - char_main_pos[1]
 
-        # 2. 計算主畫面中的相對距離差
-        # main_dx = rune_main_pos[0] - char_main_pos[0]  # 主畫面X軸距離差
-        # main_dy = rune_main_pos[1] - char_main_pos[1]  # 主畫面Y軸距離差
+        # 3. 將主畫面距離轉換為小地圖距離
+        minimap_dx = pixel_dx / MINIMAP_SCALE
+        minimap_dy = pixel_dy / MINIMAP_SCALE
 
-        # print(f"\n[!] 主畫面距離差: dx={main_dx:.2f}, dy={main_dy:.2f}")
+        # 4. 計算小地圖上的相對位置
+        char_minimap_pos = config.player_pos
+        minimap_relative_dx, minimap_relative_dy = utils.convert_to_relative(
+            (minimap_dx, minimap_dy),
+            minimap
+        )
 
+        # 5. 從角色位置計算符文位置
+        rune_minimap_pos = (
+            char_minimap_pos[0] + minimap_relative_dx,
+            char_minimap_pos[1] + minimap_relative_dy
+        )
 
-        # 4. 將主畫面距離差轉換為小地圖距離差
-        # point = (main_dx, main_dy)
-        # mini_dx, mini_dy = utils.convert_to_relative(point, minimap)
-        # mini_dx2, mini_dy2 = utils.convert_to_relative(point, frame)
-        # print(f"\n[!] 小地圖距離差: dx={mini_dx:.2f}, dy={mini_dy:.2f}")
-        # print(f"[!] 小地圖距離差2: dx={mini_dx2:.2f}, dy={mini_dy2:.2f}")
+        # 6. 輸出除錯資訊
+        print(f"\n[DEBUG] 距離計算:")
+        print(f"主畫面像素距離: dx={pixel_dx:.1f}, dy={pixel_dy:.1f}")
+        print(f"小地圖實際距離: dx={minimap_dx:.1f}, dy={minimap_dy:.1f}")
+        print(f"小地圖相對距離: dx={minimap_relative_dx:.3f}, dy={minimap_relative_dy:.3f}")
+        print(f"角色位置: {char_minimap_pos}")
+        print(f"計算出的符文位置: {rune_minimap_pos}")
 
-        # # 5. 從小地圖角色位置計算符文位置
-        # char_minimap_pos = config.player_pos
-        # rune_minimap_x = char_minimap_pos[0] + mini_dx
-        # rune_minimap_y = char_minimap_pos[1] + mini_dy
-
-        print(f"\n[!] 小地圖角色位置: {config.player_pos}")
-        print(f"[!] 計算出的小地圖符文位置: {rune_pos}")
-        return True, rune_pos
-
-
+        return True, rune_minimap_pos
 
     except Exception as e:
         print(f"\n[!] 計算符文位置時發生錯誤: {str(e)}")
